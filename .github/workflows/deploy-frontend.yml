@@ -1,0 +1,188 @@
+name: Deploy Frontend
+
+on:
+  workflow_run:
+    workflows: ["Deploy Backend"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Terraform environment identifier (defaults to associated backend run or branch)
+        required: false
+        type: string
+      cloudfront-invalidation-paths:
+        description: Space separated list of CloudFront paths to invalidate (defaults to /*)
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-frontend-${{ github.event.inputs.environment || (github.event_name == 'workflow_run' && (github.event.workflow_run.inputs.environment || github.event.workflow_run.head_branch || 'main')) || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy_frontend:
+    name: Build & upload frontend
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_BUILD_ROLE_ARN: ${{ secrets.AWS_BUILD_ROLE_ARN }}
+      AWS_INFRA_ROLE_ARN: ${{ secrets.AWS_INFRA_ROLE_ARN }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
+      TF_LOCK_TABLE: ${{ secrets.TF_LOCK_TABLE }}
+      INVALIDATION_PATHS: ${{ github.event.inputs.cloudfront-invalidation-paths || '/*' }}
+    steps:
+      - name: Check required configuration
+        shell: bash
+        run: |
+          missing=0
+          for var in AWS_REGION AWS_BUILD_ROLE_ARN AWS_INFRA_ROLE_ARN TF_STATE_BUCKET TF_STATE_KEY TF_LOCK_TABLE; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required secret: $var" >&2
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+      - name: Determine deployment environment
+        id: context
+        shell: python
+        env:
+          ENV_INPUT: ${{ github.event.inputs.environment || '' }}
+        run: |
+          import json
+          import os
+          import re
+
+          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+          env_input = os.environ.get("ENV_INPUT", "").strip()
+
+          with open(os.environ.get("GITHUB_EVENT_PATH"), "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+
+          if env_input:
+            target = env_input
+          elif event_name == "workflow_dispatch":
+            target = payload.get("ref", "").split("/")[-1]
+          elif event_name == "workflow_run":
+            run = payload.get("workflow_run", {})
+            run_inputs = (run.get("inputs") or {})
+            if run_inputs.get("environment"):
+              target = run_inputs.get("environment")
+            elif run.get("event") == "pull_request":
+              prs = run.get("pull_requests") or []
+              if prs:
+                target = prs[0].get("base", {}).get("ref", "")
+              else:
+                target = "main"
+            else:
+              target = run.get("head_branch") or run.get("run_attempt") or "main"
+          else:
+            target = payload.get("ref", "").split("/")[-1]
+
+          target = target.lower()
+          target = re.sub(r"[^a-z0-9-]", "-", target)
+          target = target.strip("-") or "main"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+            fh.write(f"environment={target}\n")
+      - name: Determine revision to checkout
+        id: checkout_ref
+        shell: bash
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            echo "ref=${GITHUB_EVENT_WORKFLOW_RUN_HEAD_SHA}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GITHUB_EVENT_WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.checkout_ref.outputs.ref }}
+      - name: Configure AWS credentials (infra role)
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: ${{ env.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
+      - name: Compute backend state key
+        shell: bash
+        run: |
+          env_name='${{ steps.context.outputs.environment }}'
+          key='${TF_STATE_KEY}'
+          if [[ "$key" == *"{env}"* ]]; then
+            key="${key//\{env\}/$env_name}"
+          elif [[ "$key" == *"{environment}"* ]]; then
+            key="${key//\{environment\}/$env_name}"
+          elif [[ "$key" == *"{ENV}"* ]]; then
+            key="${key//\{ENV\}/$env_name}"
+          else
+            key="$env_name/$key"
+          fi
+          echo "TF_BACKEND_KEY=$key" >> "$GITHUB_ENV"
+      - name: Terraform init (read state)
+        working-directory: infra
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="key=${TF_BACKEND_KEY}" \
+            -backend-config="region=${AWS_REGION}"
+      - name: Read deployment targets
+        id: targets
+        working-directory: infra
+        shell: bash
+        run: |
+          if terraform output -raw frontend_bucket >/tmp/bucket 2>/dev/null; then
+            bucket=$(cat /tmp/bucket)
+            echo "frontend_bucket=$bucket" >> "$GITHUB_OUTPUT"
+            echo "FRONTEND_BUCKET=$bucket" >> "$GITHUB_ENV"
+          else
+            echo "Terraform output frontend_bucket not available" >&2
+            exit 1
+          fi
+          if terraform output -raw cloudfront_distribution_id >/tmp/dist 2>/dev/null; then
+            dist=$(cat /tmp/dist)
+            echo "cloudfront_distribution_id=$dist" >> "$GITHUB_OUTPUT"
+            echo "CLOUDFRONT_DISTRIBUTION_ID=$dist" >> "$GITHUB_ENV"
+          fi
+      - name: Configure AWS credentials (build role)
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: ${{ env.AWS_BUILD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Upload artefacts to S3
+        shell: bash
+        run: |
+          aws s3 sync frontend/dist "s3://${FRONTEND_BUCKET}" --delete
+      - name: Create CloudFront invalidation
+        if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
+        shell: bash
+        run: |
+          read -ra path_array <<< "${INVALIDATION_PATHS:-/*}"
+          aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths "${path_array[@]}"

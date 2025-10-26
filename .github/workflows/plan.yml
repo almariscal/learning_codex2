@@ -1,0 +1,177 @@
+name: Terraform Plan
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Terraform environment identifier (defaults to branch name)
+        required: false
+        type: string
+      backend-ecr-repository:
+        description: ECR repository name for the backend image (defaults to repo variable BACKEND_ECR_REPOSITORY)
+        required: false
+        type: string
+      image-tag:
+        description: Custom Docker tag for the backend image (defaults to the commit SHA)
+        required: false
+        type: string
+      cognito-domain-prefix:
+        description: Domain prefix for Cognito Hosted UI (defaults to repo variable TF_VAR_COGNITO_DOMAIN_PREFIX or parking-<env>)
+        required: false
+        type: string
+      backend-environment-json:
+        description: JSON map with extra environment variables for the backend container
+        required: false
+        type: string
+      allow-ssh-cidr:
+        description: Optional CIDR to allow SSH access to the backend instance
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: plan-${{ github.event.inputs.environment || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  terraform_plan:
+    name: Terraform plan
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
+      TF_LOCK_TABLE: ${{ secrets.TF_LOCK_TABLE }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      AWS_INFRA_ROLE_ARN: ${{ secrets.AWS_INFRA_ROLE_ARN }}
+      ECR_REPOSITORY: ${{ github.event.inputs.backend-ecr-repository || vars.BACKEND_ECR_REPOSITORY }}
+      IMAGE_TAG: ${{ github.event.inputs.image-tag || github.sha }}
+    steps:
+      - name: Check required configuration
+        shell: bash
+        run: |
+          missing=0
+          for var in AWS_REGION TF_STATE_BUCKET TF_STATE_KEY TF_LOCK_TABLE DB_PASSWORD AWS_INFRA_ROLE_ARN; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required secret: $var" >&2
+              missing=1
+            fi
+          done
+          if [ -z "$ECR_REPOSITORY" ]; then
+            echo "ECR repository not configured. Provide workflow input \`backend-ecr-repository\` or set repository variable \`BACKEND_ECR_REPOSITORY\`." >&2
+            missing=1
+          fi
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Determine plan context
+        id: context
+        shell: python
+        env:
+          ENV_INPUT: ${{ github.event.inputs.environment || '' }}
+        run: |
+          import json
+          import os
+          import re
+
+          event_path = os.environ.get("GITHUB_EVENT_PATH")
+          with open(event_path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+
+          env_input = os.environ.get("ENV_INPUT", "").strip()
+          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+          ref_name = os.environ.get("GITHUB_REF_NAME", "")
+
+          if env_input:
+            target = env_input
+          elif event_name == "pull_request":
+            target = payload.get("pull_request", {}).get("base", {}).get("ref", "")
+          elif event_name == "push":
+            target = payload.get("ref", "").split("/")[-1]
+          elif event_name == "workflow_dispatch":
+            target = ref_name
+          else:
+            target = ref_name
+
+          target = target.lower()
+          target = re.sub(r"[^a-z0-9-]", "-", target)
+          target = target.strip("-") or "dev"
+
+          print(f"environment={target}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+            fh.write(f"environment={target}\n")
+      - name: Export Terraform variables
+        shell: bash
+        env:
+          ALLOW_SSH_CIDR_INPUT: ${{ github.event.inputs.allow-ssh-cidr || vars.TF_VAR_ALLOWED_SSH_CIDR }}
+          BACKEND_ENV_INPUT: ${{ github.event.inputs.backend-environment-json || vars.TF_VAR_BACKEND_ENVIRONMENT }}
+          COGNITO_PREFIX_INPUT: ${{ github.event.inputs['cognito-domain-prefix'] || vars.TF_VAR_COGNITO_DOMAIN_PREFIX }}
+        run: |
+          echo "TF_VAR_environment=${{ steps.context.outputs.environment }}" >> "$GITHUB_ENV"
+          echo "TF_VAR_db_password=${DB_PASSWORD}" >> "$GITHUB_ENV"
+          echo "TF_VAR_allowed_ssh_cidr=${ALLOW_SSH_CIDR_INPUT}" >> "$GITHUB_ENV"
+          if [ -n "$BACKEND_ENV_INPUT" ]; then
+            echo "TF_VAR_backend_environment=$BACKEND_ENV_INPUT" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$COGNITO_PREFIX_INPUT" ]; then
+            prefix="$COGNITO_PREFIX_INPUT"
+          else
+            prefix="parking-${{ steps.context.outputs.environment }}"
+          fi
+          echo "TF_VAR_cognito_domain_prefix=$prefix" >> "$GITHUB_ENV"
+      - name: Configure AWS credentials (infra role)
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: ${{ env.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Determine backend image URI
+        id: image
+        shell: bash
+        run: |
+          account_id=$(aws sts get-caller-identity --query 'Account' --output text)
+          image_uri="${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          echo "TF_VAR_backend_container_image=$image_uri" >> "$GITHUB_ENV"
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
+      - name: Compute backend state key
+        shell: bash
+        run: |
+          env_name='${{ steps.context.outputs.environment }}'
+          key='${TF_STATE_KEY}'
+          if [[ "$key" == *"{env}"* ]]; then
+            key="${key//\{env\}/$env_name}"
+          elif [[ "$key" == *"{environment}"* ]]; then
+            key="${key//\{environment\}/$env_name}"
+          elif [[ "$key" == *"{ENV}"* ]]; then
+            key="${key//\{ENV\}/$env_name}"
+          else
+            key="$env_name/$key"
+          fi
+          echo "TF_BACKEND_KEY=$key" >> "$GITHUB_ENV"
+      - name: Terraform init
+        working-directory: infra
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="key=${TF_BACKEND_KEY}" \
+            -backend-config="region=${AWS_REGION}"
+      - name: Terraform validate
+        working-directory: infra
+        run: terraform validate
+      - name: Terraform plan
+        working-directory: infra
+        run: terraform plan -input=false

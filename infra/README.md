@@ -39,6 +39,8 @@ terraform init \
   -backend-config="region=${AWS_REGION}"
 ```
 
+When the GitHub Actions workflow runs, the value supplied through the `TF_STATE_KEY` secret is automatically expanded with the current Terraform environment name unless it already contains one of the placeholders `{env}`, `{ENV}` or `{environment}`. This keeps the remote state objects isolated per environment without hard-coding multiple secrets.
+
 ## Configuration
 
 The most important variables are listed below. Override them using a `.tfvars` file or `-var` CLI flags.
@@ -117,20 +119,23 @@ After the apply completes, Terraform will output the CloudFront domain for the f
 
 ## GitHub Actions deployment pipeline
 
-The repository provides a reusable GitHub Actions workflow located at `.github/workflows/deploy.yml` that orchestrates the three deployment stages in order:
+The CI/CD setup is split across three workflows under `.github/workflows/` so each stage can run independently when needed:
 
-1. Build the backend Docker image and push it to Amazon ECR using the **build** role.
-2. Apply the Terraform stack with the freshly built image URI, assuming the **infra** role and reusing the remote state configuration.
-3. Build the frontend and sync the static artefacts to the S3 bucket, followed by an optional CloudFront invalidation.
+1. **`plan.yml`** – Runs a Terraform plan against the requested environment. Triggered automatically on pushes to `dev` and available for manual runs with custom inputs.
+2. **`deploy-backend.yml`** – Builds and pushes the backend Docker image, then applies the Terraform stack with the new image URI. It runs on pull requests targeting `main` (excluding drafts) and can also be launched manually for any environment.
+3. **`deploy-frontend.yml`** – Builds the Vite application and uploads the artefacts to S3, issuing an optional CloudFront invalidation. It is invoked automatically after a successful backend deployment and exposed as a manual job for ad-hoc redeploys or cache refreshes.
+
+Each workflow accepts the same environment naming conventions: the branch base (`dev`, `main`, etc.) is used by default, and the `environment` input lets you override it for manual runs.
 
 ### Triggers and manual runs
 
-- Automatically runs on pushes to the `main` and `dev` branches.
-- Can be triggered manually from the Actions tab with the `workflow_dispatch` event. Provide the `environment` input to override the Terraform `environment` variable when needed (defaults to the branch name).
+- Pushes to the `dev` branch execute the **Terraform Plan** workflow.
+- Pull requests against `main` build the backend image, apply Terraform and, upon success, trigger the frontend deployment through a `workflow_run` event.
+- Any of the three workflows can be launched manually from the Actions tab. Supply `environment` (for example `dev` or `main`) and, when relevant, overrides such as `backend-ecr-repository`, `image-tag` or custom CloudFront invalidation paths.
 
 ### Required GitHub secrets
 
-Configure the following repository secrets so the workflow can authenticate and access remote state:
+Configure the following repository secrets so the workflows can authenticate and access remote state:
 
 | Secret | Purpose |
 | --- | --- |
@@ -144,17 +149,20 @@ Configure the following repository secrets so the workflow can authenticate and 
 
 ### Optional repository variables and workflow inputs
 
-| Name | Type | Description |
-| --- | --- | --- |
-| `BACKEND_ECR_REPOSITORY` | Repository variable | Default ECR repository name (e.g. `parking-backend`). |
-| `TF_VAR_COGNITO_DOMAIN_PREFIX` | Repository variable | Base domain prefix for Cognito. Fallback defaults to `parking-<environment>`. |
-| `TF_VAR_BACKEND_ENVIRONMENT` | Repository variable | JSON map for extra backend environment variables. Supply via the `backend-environment-json` workflow input if you prefer ad-hoc overrides. |
-| `TF_VAR_ALLOWED_SSH_CIDR` | Repository variable | Optional CIDR opened for SSH into the EC2 instance. |
-| `cloudfront-invalidation-paths` | Workflow input | Paths invalidated after uploading the frontend. Defaults to `/*`. |
-| `backend-ecr-repository` | Workflow input | Override of the ECR repository for a single run. |
-| `image-tag` | Workflow input | Custom Docker tag (defaults to the commit SHA). |
+| Name | Type | Consumed by | Description |
+| --- | --- | --- | --- |
+| `BACKEND_ECR_REPOSITORY` | Repository variable | Plan & Deploy Backend | Default ECR repository name (e.g. `parking-backend`). |
+| `TF_VAR_COGNITO_DOMAIN_PREFIX` | Repository variable | Plan & Deploy Backend | Base domain prefix for Cognito. Fallback defaults to `parking-<environment>`. |
+| `TF_VAR_BACKEND_ENVIRONMENT` | Repository variable | Plan & Deploy Backend | JSON map for extra backend environment variables. Supply via the `backend-environment-json` input for overrides. |
+| `TF_VAR_ALLOWED_SSH_CIDR` | Repository variable | Plan & Deploy Backend | Optional CIDR opened for SSH into the EC2 instance. |
+| `backend-ecr-repository` | Workflow input | Plan & Deploy Backend | Override of the ECR repository for a single run. |
+| `image-tag` | Workflow input | Plan & Deploy Backend | Custom Docker tag (defaults to the commit SHA). |
+| `backend-environment-json` | Workflow input | Plan & Deploy Backend | Per-run JSON map overriding `TF_VAR_BACKEND_ENVIRONMENT`. |
+| `allow-ssh-cidr` | Workflow input | Plan & Deploy Backend | Per-run override for the SSH CIDR. |
+| `cognito-domain-prefix` | Workflow input | Plan & Deploy Backend | Override the Cognito hosted UI domain prefix. |
+| `cloudfront-invalidation-paths` | Workflow input | Deploy Frontend | Paths invalidated after uploading the frontend. Defaults to `/*`. |
 
-The workflow exposes the Terraform outputs `frontend_bucket` and `cloudfront_distribution_id` to subsequent jobs. The additional `cloudfront_distribution_id` output in `outputs.tf` enables automated cache invalidation during the deployment.
+The backend workflow publishes the full set of Terraform outputs as an artifact, while the frontend workflow reads the `frontend_bucket` and `cloudfront_distribution_id` values directly from remote state to target the correct distribution.
 
 ## Destroying the stack
 
