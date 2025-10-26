@@ -7,6 +7,14 @@ resource "aws_s3_bucket" "frontend" {
   force_destroy = true
 }
 
+resource "aws_s3_bucket_ownership_controls" "frontend" {
+  bucket = aws_s3_bucket.frontend.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
 resource "aws_s3_bucket_versioning" "frontend" {
   bucket = aws_s3_bucket.frontend.id
 
@@ -60,6 +68,7 @@ resource "aws_cloudfront_distribution" "frontend" {
     target_origin_id = "frontend-bucket"
 
     viewer_protocol_policy = "redirect-to-https"
+    compress               = true
 
     forwarded_values {
       query_string = false
@@ -67,6 +76,20 @@ resource "aws_cloudfront_distribution" "frontend" {
         forward = "none"
       }
     }
+  }
+
+  custom_error_response {
+    error_code            = 403
+    response_code         = 200
+    response_page_path    = "/index.html"
+    error_caching_min_ttl = 0
+  }
+
+  custom_error_response {
+    error_code            = 404
+    response_code         = 200
+    response_page_path    = "/index.html"
+    error_caching_min_ttl = 0
   }
 
   restrictions {
@@ -82,6 +105,8 @@ resource "aws_cloudfront_distribution" "frontend" {
 
 resource "aws_s3_bucket_policy" "frontend" {
   bucket = aws_s3_bucket.frontend.id
+
+  depends_on = [aws_s3_bucket_ownership_controls.frontend]
 
   policy = jsonencode({
     Version = "2012-10-17"

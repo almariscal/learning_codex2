@@ -8,6 +8,11 @@ output "cloudfront_distribution_domain" {
   value       = aws_cloudfront_distribution.frontend.domain_name
 }
 
+output "cloudfront_distribution_id" {
+  description = "ID of the CloudFront distribution serving the frontend."
+  value       = aws_cloudfront_distribution.frontend.id
+}
+
 output "backend_public_dns" {
   description = "Public DNS name of the backend EC2 instance."
   value       = aws_instance.backend.public_dns

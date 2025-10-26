@@ -263,4 +263,3 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
             --paths "${path_array[@]}"
-root@95cf17f141f1:/workspace/learning_codex2#
