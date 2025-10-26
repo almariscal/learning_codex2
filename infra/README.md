@@ -39,6 +39,8 @@ terraform init \
   -backend-config="region=${AWS_REGION}"
 ```
 
+When the GitHub Actions workflow runs, the value supplied through the `TF_STATE_KEY` secret is automatically expanded with the current Terraform environment name unless it already contains one of the placeholders `{env}`, `{ENV}` or `{environment}`. This keeps the remote state objects isolated per environment without hard-coding multiple secrets.
+
 ## Configuration
 
 The most important variables are listed below. Override them using a `.tfvars` file or `-var` CLI flags.
@@ -125,8 +127,9 @@ The repository provides a reusable GitHub Actions workflow located at `.github/w
 
 ### Triggers and manual runs
 
-- Automatically runs on pushes to the `main` and `dev` branches.
-- Can be triggered manually from the Actions tab with the `workflow_dispatch` event. Provide the `environment` input to override the Terraform `environment` variable when needed (defaults to the branch name).
+- Pushes to the `dev` branch execute a **Terraform plan** and build the Docker artefact without applying changes.
+- Pull requests targeting `main` (and not marked as draft) build the images, apply the Terraform stack and deploy the frontend.
+- From the Actions tab you can start the workflow manually. Provide the `environment` input (`dev`, `main`, etc.) and optionally set `action` to `plan` or `apply`. If `action` is omitted the workflow will plan for non-production environments and apply automatically for `main`.
 
 ### Required GitHub secrets
 
