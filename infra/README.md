@@ -115,6 +115,47 @@ After the apply completes, Terraform will output the CloudFront domain for the f
 
 3. **Database migrations** – Because the backend container receives the `DATABASE_URL` environment variable pointing to the RDS instance, enable automatic migrations by setting `RUN_MIGRATIONS="true"` in `backend_environment`.
 
+## GitHub Actions deployment pipeline
+
+The repository provides a reusable GitHub Actions workflow located at `.github/workflows/deploy.yml` that orchestrates the three deployment stages in order:
+
+1. Build the backend Docker image and push it to Amazon ECR using the **build** role.
+2. Apply the Terraform stack with the freshly built image URI, assuming the **infra** role and reusing the remote state configuration.
+3. Build the frontend and sync the static artefacts to the S3 bucket, followed by an optional CloudFront invalidation.
+
+### Triggers and manual runs
+
+- Automatically runs on pushes to the `main` and `dev` branches.
+- Can be triggered manually from the Actions tab with the `workflow_dispatch` event. Provide the `environment` input to override the Terraform `environment` variable when needed (defaults to the branch name).
+
+### Required GitHub secrets
+
+Configure the following repository secrets so the workflow can authenticate and access remote state:
+
+| Secret | Purpose |
+| --- | --- |
+| `AWS_REGION` | AWS region for both Terraform and SDK commands. |
+| `AWS_BUILD_ROLE_ARN` | IAM role assumed to build/push artefacts and upload the frontend. |
+| `AWS_INFRA_ROLE_ARN` | IAM role assumed by Terraform to apply infrastructure. |
+| `DB_PASSWORD` | Injected as `TF_VAR_db_password`. |
+| `TF_STATE_BUCKET` | Remote state S3 bucket name. |
+| `TF_STATE_KEY` | Remote state object key. |
+| `TF_LOCK_TABLE` | DynamoDB table used for state locking. |
+
+### Optional repository variables and workflow inputs
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `BACKEND_ECR_REPOSITORY` | Repository variable | Default ECR repository name (e.g. `parking-backend`). |
+| `TF_VAR_COGNITO_DOMAIN_PREFIX` | Repository variable | Base domain prefix for Cognito. Fallback defaults to `parking-<environment>`. |
+| `TF_VAR_BACKEND_ENVIRONMENT` | Repository variable | JSON map for extra backend environment variables. Supply via the `backend-environment-json` workflow input if you prefer ad-hoc overrides. |
+| `TF_VAR_ALLOWED_SSH_CIDR` | Repository variable | Optional CIDR opened for SSH into the EC2 instance. |
+| `cloudfront-invalidation-paths` | Workflow input | Paths invalidated after uploading the frontend. Defaults to `/*`. |
+| `backend-ecr-repository` | Workflow input | Override of the ECR repository for a single run. |
+| `image-tag` | Workflow input | Custom Docker tag (defaults to the commit SHA). |
+
+The workflow exposes the Terraform outputs `frontend_bucket` and `cloudfront_distribution_id` to subsequent jobs. The additional `cloudfront_distribution_id` output in `outputs.tf` enables automated cache invalidation during the deployment.
+
 ## Destroying the stack
 
 Run `terraform destroy -var-file=dev.tfvars`. Be mindful of the `db_skip_final_snapshot` flag which defaults to `false` to keep your data safe. Set it to `true` if you prefer to skip the snapshot on destroy.
