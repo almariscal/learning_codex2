@@ -11,11 +11,13 @@ RUN apt-get update && \
         git \
         gnupg \
         libayatana-appindicator3-dev \
+        libfuse2 \
         libgtk-3-dev \
         libsoup2.4-dev \
         libwebkit2gtk-4.0-dev \
         libjavascriptcoregtk-4.0-dev \
         librsvg2-dev \
+        squashfs-tools \
         patchelf \
         libssl-dev \
         pkg-config \
@@ -58,9 +60,9 @@ RUN rm -rf desktop/tauri/src-tauri/backend && \
 
 RUN npm --prefix desktop/tauri run build
 
-RUN set -euo pipefail && \
+RUN set -eu && \
     mkdir -p /artifacts && \
-    find desktop/tauri/src-tauri/target/release/bundle -name '*.AppImage' -print -exec cp {} /artifacts/ \; && \
+    find desktop/tauri/src-tauri/target -type f -iname '*.appimage' -print -exec cp {} /artifacts/ \; && \
     if [ -z "$(ls -A /artifacts)" ]; then \
         echo "No AppImage artifact generated. Check tauri build logs above."; \
         exit 1; \
