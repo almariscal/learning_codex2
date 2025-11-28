@@ -11,6 +11,7 @@ RUN apt-get update && \
         git \
         gnupg \
         libayatana-appindicator3-dev \
+        libfuse2 \
         libgtk-3-dev \
         libsoup2.4-dev \
         libwebkit2gtk-4.0-dev \
