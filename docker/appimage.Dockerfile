@@ -33,7 +33,6 @@ RUN apt-get update && \
 RUN curl -Lo /usr/local/bin/appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage && \
     chmod +x /usr/local/bin/appimagetool
 
-ENV APPIMAGE_EXTRACT_AND_RUN=1
 ENV TAURI_BUNDLER_APPIMAGE_TOOL=/usr/local/bin/appimagetool
 
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
