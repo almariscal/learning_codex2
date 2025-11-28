@@ -14,6 +14,7 @@ Esta guía describe cómo construir y empaquetar la versión de escritorio (Wind
 - Node.js 20+ y npm
 - Rust/Cargo + Tauri CLI (`npm install` dentro de `desktop/tauri`)
 - [`libfuse2`](https://packages.ubuntu.com/search?keywords=libfuse2) y [`squashfs-tools`](https://packages.ubuntu.com/search?keywords=squashfs-tools) (requeridos para ejecutar `appimagetool` durante el empaquetado)
+- [`libfuse2`](https://packages.ubuntu.com/search?keywords=libfuse2) (requerido para ejecutar `appimagetool` durante el empaquetado)
 
 ## 1. Empaquetar el backend
 
