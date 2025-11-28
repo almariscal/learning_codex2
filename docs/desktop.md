@@ -15,6 +15,7 @@ Esta guía describe cómo construir y empaquetar la versión de escritorio (Wind
 - Rust/Cargo + Tauri CLI (`npm install` dentro de `desktop/tauri`)
 - [`libfuse2`](https://packages.ubuntu.com/search?keywords=libfuse2) y [`squashfs-tools`](https://packages.ubuntu.com/search?keywords=squashfs-tools) (requeridos para ejecutar `appimagetool` durante el empaquetado)
 - [`appimagetool`](https://github.com/AppImage/AppImageKit/releases/latest) disponible en el `PATH` (Tauri lo descargará solo si no está presente, pero es mejor fijarlo para builds repetibles)
+- [`libfuse2`](https://packages.ubuntu.com/search?keywords=libfuse2) (requerido para ejecutar `appimagetool` durante el empaquetado)
 
 ## 1. Empaquetar el backend
 
@@ -88,4 +89,3 @@ El Dockerfile incluye:
 - Node.js 20 + npm para frontend y Tauri CLI.
 - Rust toolchain para compilar el wrapper.
 - Librerías de sistema requeridas por Tauri (`libgtk-3-dev`, `libayatana-appindicator3-dev`, `libwebkit2gtk-4.0-dev`, etc.), incluyendo `libfuse2` para que `appimagetool` pueda ejecutarse dentro del contenedor.
-- Una copia fija de `appimagetool` en `/usr/local/bin` para evitar descargas en entornos sin conexión.
