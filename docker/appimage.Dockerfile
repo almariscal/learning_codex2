@@ -10,12 +10,15 @@ RUN apt-get update && \
         curl \
         git \
         gnupg \
+        fuse \
         libayatana-appindicator3-dev \
+        libfuse2 \
         libgtk-3-dev \
         libsoup2.4-dev \
         libwebkit2gtk-4.0-dev \
         libjavascriptcoregtk-4.0-dev \
         librsvg2-dev \
+        squashfs-tools \
         patchelf \
         libssl-dev \
         pkg-config \
@@ -26,6 +29,11 @@ RUN apt-get update && \
         wget \
         xz-utils && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -Lo /usr/local/bin/appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage && \
+    chmod +x /usr/local/bin/appimagetool
+
+ENV TAURI_BUNDLER_APPIMAGE_TOOL=/usr/local/bin/appimagetool
 
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
     curl -sS https://bootstrap.pypa.io/get-pip.py | python3 && \
@@ -58,9 +66,9 @@ RUN rm -rf desktop/tauri/src-tauri/backend && \
 
 RUN npm --prefix desktop/tauri run build
 
-RUN set -euo pipefail && \
+RUN set -eu && \
     mkdir -p /artifacts && \
-    find desktop/tauri/src-tauri/target/release/bundle -name '*.AppImage' -print -exec cp {} /artifacts/ \; && \
+    find desktop/tauri/src-tauri/target -type f -iname '*.appimage' -print -exec cp {} /artifacts/ \; && \
     if [ -z "$(ls -A /artifacts)" ]; then \
         echo "No AppImage artifact generated. Check tauri build logs above."; \
         exit 1; \
