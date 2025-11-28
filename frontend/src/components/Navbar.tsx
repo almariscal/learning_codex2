@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { Link, useLocation } from "react-router-dom";
 
+import DesktopStatusBadge from "./DesktopStatusBadge";
 import ThemeToggle from "./ThemeToggle";
 
 const links = [
@@ -34,6 +35,7 @@ const Navbar = (): JSX.Element => {
               </li>
             ))}
           </ul>
+          <DesktopStatusBadge />
           <ThemeToggle />
         </div>
       </nav>

@@ -1,0 +1,14 @@
+{
+  "name": "parking-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "lint": "tauri icon"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.6.0"
+  }
+}

@@ -14,9 +14,27 @@ import type {
   ParkingSpotUpdate
 } from "../types";
 
+const API_FALLBACK = "/api";
+
+export const resolveInitialApiBase = (): string => {
+  if (typeof window !== "undefined" && window.__API_BASE__) {
+    return window.__API_BASE__;
+  }
+
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+
+  return API_FALLBACK;
+};
+
 const api = axios.create({
-  baseURL: "/api"
+  baseURL: resolveInitialApiBase()
 });
+
+export const setApiBaseUrl = (baseURL: string): void => {
+  api.defaults.baseURL = baseURL;
+};
 
 export const fetchEmployees = async (): Promise<Employee[]> => {
   const { data } = await api.get<Employee[]>("/employees/");

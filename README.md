@@ -70,6 +70,47 @@ Al mismo tiempo, permitir a cada empleado:
    - Postgres se levanta automáticamente (`postgres/postgres`)
    - Ajusta `SEED_DATA=true` en `docker-compose.yml` si quieres cargar datos demo al arrancar.
 
+## Aplicación de escritorio (Windows/Ubuntu)
+
+El repositorio incluye una envoltura con Tauri para ejecutar el frontend y el backend sin depender de Docker.
+
+1. **Empaquetar backend**
+   ```bash
+   cd backend
+   ./scripts/build_backend_exe.sh        # Linux / Ubuntu
+   # o
+   pwsh ./scripts/build_backend_exe.ps1  # Windows
+   ```
+   El binario (`parking-backend`) queda en `backend/dist/parking-backend/`.
+
+2. **Ejecutar Tauri en desarrollo**
+   ```bash
+   cd desktop/tauri
+   npm install
+   export PARKING_BACKEND_DEV_COMMAND="python -m app.desktop.server"
+   npm run dev
+   ```
+   Tauri abrirá una ventana y pedirá la carpeta donde guardar la base de datos (se persiste en `~/.parking-allocator/desktop/config.json`).
+
+3. **Generar instaladores**
+   ```bash
+   cd desktop/tauri
+   npm run build
+   ```
+   Produce `.msi` (Windows) y `.AppImage/.deb` (Ubuntu), incluyendo el binario generado por PyInstaller dentro de `desktop/tauri/src-tauri/backend/`.
+
+Consulta `docs/desktop.md` para más detalles, variables de entorno y pasos de validación.
+
+### Build automático con Docker
+
+Para obtener la AppImage sin instalar Rust/Node/Python en tu host Linux:
+
+```bash
+./scripts/build_appimage_via_docker.sh
+```
+
+El script utiliza `docker/appimage.Dockerfile`, compila backend + frontend + wrapper dentro del contenedor y copia el artefacto final a `dist/appimage/`.
+
 ## Próximos pasos hacia AWS
 
 - Sustituir SQLite por Postgres (Docker local → RDS) y añadir migraciones Alembic.

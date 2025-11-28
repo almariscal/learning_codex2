@@ -29,6 +29,20 @@ docker run --rm -p 8080:80 parking-frontend
 
 En `docker-compose.yml` ya se define un proxy `/api` hacia el backend para el despliegue conjunto.
 
+## Modo escritorio (Tauri)
+
+El frontend se empaqueta dentro del wrapper Tauri ubicado en `desktop/tauri`. Para desarrollarlo junto con la aplicación nativa:
+
+```bash
+# Desde la raíz del repo
+cd desktop/tauri
+npm install
+export PARKING_BACKEND_DEV_COMMAND="python -m app.desktop.server"
+npm run dev
+```
+
+La barra superior muestra el estado de la carpeta de datos cuando se ejecuta en el wrapper de escritorio, permitiendo cambiarla desde la interfaz.
+
 ## Estructura destacada
 
 - `src/pages`: vistas principales (RRHH, empleado, login simulado).
