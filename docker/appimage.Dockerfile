@@ -11,6 +11,7 @@ RUN apt-get update && \
         git \
         gnupg \
         libayatana-appindicator3-dev \
+        libfuse2 \
         libgtk-3-dev \
         libsoup2.4-dev \
         libwebkit2gtk-4.0-dev \
@@ -58,7 +59,7 @@ RUN rm -rf desktop/tauri/src-tauri/backend && \
 
 RUN npm --prefix desktop/tauri run build
 
-RUN set -euo pipefail && \
+RUN set -eu && \
     mkdir -p /artifacts && \
     find desktop/tauri/src-tauri/target/release/bundle -name '*.AppImage' -print -exec cp {} /artifacts/ \; && \
     if [ -z "$(ls -A /artifacts)" ]; then \
