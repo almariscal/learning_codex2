@@ -17,6 +17,7 @@ RUN apt-get update && \
         libwebkit2gtk-4.0-dev \
         libjavascriptcoregtk-4.0-dev \
         librsvg2-dev \
+        squashfs-tools \
         patchelf \
         libssl-dev \
         pkg-config \
@@ -61,7 +62,7 @@ RUN npm --prefix desktop/tauri run build
 
 RUN set -eu && \
     mkdir -p /artifacts && \
-    find desktop/tauri/src-tauri/target/release/bundle -name '*.AppImage' -print -exec cp {} /artifacts/ \; && \
+    find desktop/tauri/src-tauri/target -type f -iname '*.appimage' -print -exec cp {} /artifacts/ \; && \
     if [ -z "$(ls -A /artifacts)" ]; then \
         echo "No AppImage artifact generated. Check tauri build logs above."; \
         exit 1; \
