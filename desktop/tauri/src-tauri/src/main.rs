@@ -174,7 +174,7 @@ fn launch_backend(app: &AppHandle, data_dir: &Path) -> Result<(Child, DesktopCon
     command.env("PARKING_DATA_DIR", &data_dir_str);
     command.env("DATA_DIR", &data_dir_str);
 
-    let mut child = command.spawn().context("starting backend process")?;
+    let child = command.spawn().context("starting backend process")?;
 
     let api_base = format!("http://127.0.0.1:{port}/api");
     wait_for_backend(&api_base)?;
