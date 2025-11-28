@@ -10,6 +10,7 @@ RUN apt-get update && \
         curl \
         git \
         gnupg \
+        fuse \
         libayatana-appindicator3-dev \
         libfuse2 \
         libgtk-3-dev \
@@ -28,6 +29,11 @@ RUN apt-get update && \
         wget \
         xz-utils && \
     rm -rf /var/lib/apt/lists/*
+
+RUN curl -Lo /usr/local/bin/appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage && \
+    chmod +x /usr/local/bin/appimagetool
+
+ENV TAURI_BUNDLER_APPIMAGE_TOOL=/usr/local/bin/appimagetool
 
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
     curl -sS https://bootstrap.pypa.io/get-pip.py | python3 && \
