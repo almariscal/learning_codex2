@@ -25,6 +25,9 @@
       ],
       "targets": [
         "appimage"
+      ],
+      "icon": [
+        "icons/icon-32x32.png"
       ]
     },
     "security": {

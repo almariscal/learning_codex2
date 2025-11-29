@@ -30,8 +30,14 @@ RUN apt-get update && \
         xz-utils && \
     rm -rf /var/lib/apt/lists/*
 
-RUN curl -Lo /usr/local/bin/appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage && \
-    chmod +x /usr/local/bin/appimagetool
+RUN curl -Lo /tmp/appimagetool.AppImage \
+      https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage && \
+    chmod +x /tmp/appimagetool.AppImage && \
+    /tmp/appimagetool.AppImage --appimage-extract && \
+    mv squashfs-root/AppRun /usr/local/bin/appimagetool && \
+    chmod +x /usr/local/bin/appimagetool && \
+    rm -rf /tmp/appimagetool.AppImage squashfs-root
+
 
 ENV TAURI_BUNDLER_APPIMAGE_TOOL=/usr/local/bin/appimagetool
 

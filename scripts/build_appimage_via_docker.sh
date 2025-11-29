@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_NAME="parking-appimage-builder"
 ARTIFACT_DIR="${ROOT_DIR}/dist/appimage"
 
-docker build -f "${ROOT_DIR}/docker/appimage.Dockerfile" -t "${IMAGE_NAME}" "${ROOT_DIR}"
+docker build --progress=plain -f "${ROOT_DIR}/docker/appimage.Dockerfile" -t "${IMAGE_NAME}" "${ROOT_DIR}"
 
 CONTAINER_ID="$(docker create "${IMAGE_NAME}")"
 mkdir -p "${ARTIFACT_DIR}"
